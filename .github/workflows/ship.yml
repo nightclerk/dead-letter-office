@@ -1,0 +1,66 @@
+# Every push: prove the clerk doesn't phone home, then publish to GitHub Pages.
+name: Check privacy and ship
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  privacy:
+    name: The clerk must not phone home
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the test browser
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: Static check (no outside servers in our code)
+        run: node scripts/privacy-check.mjs
+      - name: Walk through a whole letter in a real browser and count every request
+        run: node tests/smoke.mjs
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: privacy
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Copy Transformers.js and ONNX Runtime from npm (the site serves its own copies, no CDN)
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run vendor
+      - name: Collect only the files the site needs
+        run: |
+          mkdir _site
+          cp -r index.html sw.js css js vendor fonts _site/
+          sed -i "s#<link rel=\"stylesheet\"#<meta name=\"repo\" content=\"${{ github.server_url }}/${{ github.repository }}\">\n  <link rel=\"stylesheet\"#" _site/index.html
+          touch _site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

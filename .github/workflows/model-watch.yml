@@ -1,0 +1,37 @@
+# Open models only stay useful if they stay reachable. Once a week, check that
+# every Gemma model the Dead Letter Office offers can still be downloaded, and open an
+# issue if one has gone missing.
+name: Model watch
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check each model on Hugging Face
+        id: check
+        run: |
+          missing=""
+          for id in $(grep -o "onnx-community/[A-Za-z0-9._-]*" js/app.js | sort -u); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -L "https://huggingface.co/$id/resolve/main/config.json")
+            echo "$id -> $code"
+            if [ "$code" != "200" ]; then missing="$missing $id"; fi
+          done
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
+      - name: Open an issue if a clerk went missing
+        if: steps.check.outputs.missing != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "A clerk went missing: model no longer downloadable" \
+            --body "These models could not be fetched this week:${{ steps.check.outputs.missing }}"
