@@ -11,17 +11,17 @@ const MOCK = params.has('mock');
 const MODELS = [
   {
     key: 'gemma3-1b', id: 'onnx-community/gemma-3-1b-it-ONNX',
-    name: 'Gemma 3 · 1B', size: '≈ 760 MB', dtype: { webgpu: 'q4f16' }, needs: 'webgpu',
+    name: 'Gemma 3 · 1B', size: { f16: '≈ 760 MB', f32: '≈ 860 MB' }, dtype: { f16: 'q4f16', f32: 'q4' }, needs: 'webgpu',
     blurb: 'Recommended. Quick on its feet and good at short, kind questions.',
   },
   {
     key: 'gemma4-e2b', id: 'onnx-community/gemma-4-E2B-it-ONNX',
-    name: 'Gemma 4 · E2B', size: '≈ 3.1 GB', dtype: { webgpu: 'q4f16' }, needs: 'webgpu',
+    name: 'Gemma 4 · E2B', size: { f16: '≈ 3.1 GB', f32: '≈ 3.6 GB' }, dtype: { f16: 'q4f16', f32: 'q4' }, needs: 'webgpu',
     blurb: 'The newest Gemma. Better with nuance and with languages other than English. A big download that needs a recent graphics card.',
   },
   {
     key: 'gemma3-270m', id: 'onnx-community/gemma-3-270m-it-ONNX',
-    name: 'Gemma 3 · 270M', size: '≈ 280–330 MB', dtype: { webgpu: 'q4f16', wasm: 'q4' }, needs: 'any',
+    name: 'Gemma 3 · 270M', size: { f16: '≈ 280 MB', f32: '≈ 330 MB', wasm: '≈ 330 MB' }, dtype: { f16: 'q4f16', f32: 'q4', wasm: 'q4' }, needs: 'any',
     blurb: 'Small enough to work without a graphics card. Slower, with simpler words.',
   },
 ];
@@ -60,9 +60,17 @@ net.onChange((s) => {
 
 // ---------------------------------------------------------------- model picker
 let gpuOK = false;
+let f16OK = false; // some graphics cards can't do 16-bit float math in shaders
 async function detectGPU() {
-  try { gpuOK = !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch { gpuOK = false; }
+  try {
+    const adapter = navigator.gpu && await navigator.gpu.requestAdapter();
+    gpuOK = !!adapter;
+    f16OK = !!adapter && adapter.features.has('shader-f16');
+  } catch { gpuOK = false; f16OK = false; }
 }
+// Which build of the weights fits this device: 4-bit weights with 16-bit math
+// where the GPU supports it, 4-bit weights with 32-bit math where it doesn't.
+const variant = () => (!gpuOK ? 'wasm' : f16OK ? 'f16' : 'f32');
 function renderModels() {
   const box = $('#models');
   box.querySelectorAll('.model').forEach((n) => n.remove());
@@ -72,7 +80,7 @@ function renderModels() {
     const label = document.createElement('label');
     label.className = 'model' + (ok ? '' : ' disabled');
     label.innerHTML = `<input type="radio" name="model" value="${m.key}" ${ok ? '' : 'disabled'} ${m === firstAvail ? 'checked' : ''}>
-      <strong>${m.name}</strong><span class="size">${m.size}</span><span class="meta">${m.blurb}</span>`;
+      <strong>${m.name}</strong><span class="size">${m.size[variant()] || m.size.f32}</span><span class="meta">${m.blurb}</span>`;
     box.appendChild(label);
   }
   $('#device-note').textContent = gpuOK
@@ -123,11 +131,11 @@ $('#wake').addEventListener('click', () => {
   const key = document.querySelector('input[name="model"]:checked')?.value;
   chosen = MODELS.find((m) => m.key === key) || MODELS.at(-1);
   const device = gpuOK ? 'webgpu' : 'wasm';
-  const dtype = chosen.dtype[device] || chosen.dtype.webgpu;
+  const dtype = chosen.dtype[variant()] || chosen.dtype.f32;
   show('loading');
   $('#load-log').textContent = '';
   log(`clerk requested: ${chosen.name} (${chosen.id})`);
-  log(device === 'webgpu' ? 'graphics card found (WebGPU)' : 'no WebGPU, the clerk will work on the CPU');
+  log(device === 'webgpu' ? `graphics card found (WebGPU${f16OK ? ', 16-bit' : ', 32-bit'})` : 'no WebGPU, the clerk will work on the CPU');
   net.setPhase('downloading');
   const started = performance.now();
   let lastPhase = '';
