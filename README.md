@@ -15,22 +15,23 @@ A letter to your dead mother is about the most private thing you will ever write
 
 - **Nothing leaves the device.** A counter in the corner shows every network request the page makes. Once the clerk is at the desk it should read zero, and every push to this repo is tested for that (see below). The stronger test is yours: switch off your Wi-Fi and keep writing.
 - **It costs nothing to run.** No tokens, no subscription, no rate limit.
-- **It can't disappear.** The app is static files, and the libraries are vendored in this repo instead of loaded from a CDN. As long as the open weights exist somewhere, the clerk can be called.
+- **It can't disappear.** The app is static files. The site serves its own copies of Transformers.js, ONNX Runtime and its fonts instead of loading them from a CDN. As long as the open weights exist somewhere, the clerk can be called.
 
 ## The clerks
 
 | Model | Download | Runs on |
 |---|---|---|
-| Gemma 3 · 1B (recommended) | ≈ 760 MB | WebGPU |
-| Gemma 4 · E2B | ≈ 3.1 GB | WebGPU, recent GPU |
-| Gemma 3 · 270M | ≈ 280–330 MB | WebGPU or CPU (WASM) |
+| Gemma 3 · 1B (recommended) | ≈ 760 MB (16-bit GPUs) / 860 MB | WebGPU |
+| Gemma 4 · E2B | ≈ 3.1 GB / 3.6 GB | WebGPU, recent GPU |
+| Gemma 3 · 270M | ≈ 280 MB / 330 MB | WebGPU or CPU (WASM) |
 
-All are the `onnx-community` ONNX conversions on Hugging Face, quantized to 4 bits.
+All are the `onnx-community` ONNX conversions on Hugging Face with 4-bit weights. The app checks whether your graphics card supports 16-bit shader math (`shader-f16`) and picks `q4f16` or `q4` to match. (The first test on a real laptop failed exactly there, so now it asks first.)
 
 ## How it works
 
-- `js/ghost-worker.js` loads Gemma in a Web Worker (the file is still called `ghost-worker.js`) with Transformers.js (`pipeline('text-generation', …, { device: 'webgpu', dtype: 'q4f16' })`) and streams tokens back to the page.
-- `js/app.js` runs the ritual: who the letter is for, up to three questions built from what you've shared, then a draft that the model is told to build from **only** your memories and invent nothing. You can edit every word.
+- `js/ghost-worker.js` loads Gemma in a Web Worker (the file is still called `ghost-worker.js`) with Transformers.js (`pipeline('text-generation', …, { device: 'webgpu', dtype })`) and streams tokens back to the page.
+- `js/app.js` runs the ritual: who the letter is for, then up to three questions built from what you've shared.
+- The draft is built **one memory at a time**. Asked to write a whole letter, a 1B model invents things: in testing it gave a grandfather a favourite song nobody had mentioned. So the clerk only turns each thing you said to face the person ("He peeled oranges" becomes "You peeled oranges"), with greedy decoding and an instruction to add nothing. If a rewrite drifts too far from what you wrote, your own words are kept. You can edit every word.
 - `js/netwatch.js` wraps `fetch`, `XMLHttpRequest`, `sendBeacon`, `WebSocket` and `EventSource`, and watches the Performance API for any other resource load. The worker reports its own requests too.
 - `sw.js` keeps the app's own files on the device so it opens offline; Transformers.js keeps the model in the browser's Cache Storage.
 - Burning is a CSS mask moving up an airmail sheet with a canvas of embers and ash. Afterwards the text is cleared from the page and from memory, and a postmark is stamped.
