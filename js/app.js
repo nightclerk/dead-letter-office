@@ -196,26 +196,42 @@ function describe() {
   return { who, lines };
 }
 
-// A 1B model follows a worked example far better than a list of rules,
-// so the prompt shows two good questions about other people.
+// A 1B model follows worked examples far better than a list of rules.
+// Two short memory -> question pairs teach it to ask about a detail in
+// what you wrote. After the first question it looks at your latest answer,
+// so each question follows the conversation instead of circling back.
 function questionPrompt() {
-  const rel = letter.rel ? `, their ${letter.rel.replace(/^my\s+/i, '')},` : '';
-  const lines = letter.items.map((it) => (it.q ? `- ${it.q} ${it.a}` : `- ${it.a}`)).join('\n');
-  const asked = letter.questions.length ? `\nYou already asked: ${letter.questions.join(' / ')}. Ask about something different now.\n` : '';
+  const rel = letter.rel ? `, their ${letter.rel.replace(/^my\s+/i, '')}` : '';
+  const last = letter.items.at(-1);
+  const memory = last.q ? `${last.q} ${last.a}` : last.a;
+  const asked = letter.questions.length ? `\nDo not ask again: ${letter.questions.join(' / ')}\n` : '';
   return [{
     role: 'user',
     content:
-`Someone is writing a letter to ${letter.name}${rel} who has died. This is what they remember so far:
-${lines}
+`You help people remember someone who has died by asking one short question about a detail in what they wrote. The question names a sense (sound, smell, sight, touch, taste), a place, or something the person used to say. Ask it in the language they wrote in.
+
+Example 1
+They remember about Rosa: She read the newspaper every morning before work.
+Question: Where did Rosa sit when she read the newspaper?
+
+Example 2
+They remember about Uncle Sam: He fixed bicycles in the garage on Sundays.
+Question: What did the garage smell like when Uncle Sam was working?
 ${asked}
-Ask them one short question that helps them remember more. Start it with What, Where, When, Who or How. Ask about a sound, a smell, a place, a habit or something they used to say. Keep it under 15 words. Ask it in the same language they wrote in.
-
-Two examples of the kind of question to ask (about other people):
-- Where did she sit when she read the newspaper?
-- What did his coat smell like in winter?
-
-Your question:`,
+Now
+They remember about ${letter.name}${rel}: ${memory}
+Question:`,
   }];
+}
+
+const wordSet = (t) => new Set((t.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((w) => w.length > 2));
+function tooSimilar(q, earlier) {
+  const a = wordSet(q);
+  return earlier.some((e) => {
+    const b = wordSet(e);
+    const shared = [...a].filter((w) => b.has(w)).length;
+    return shared / Math.max(1, Math.min(a.size, b.size)) > 0.6;
+  });
 }
 
 // The clerk never writes a word of your letter. In testing, Gemma asked to
@@ -282,11 +298,14 @@ async function nextQuestion() {
   setAskBusy(true);
   qel.textContent = ''; qel.classList.add('thinking');
   let q = null;
-  try {
-    const raw = await ask(questionPrompt(), { max_new_tokens: 48, temperature: 0.7 });
-    q = cleanQuestion(raw);
-  } catch (err) { console.error(err); }
-  if (!q || letter.questions.includes(q)) q = FALLBACK_QUESTIONS.find((f) => !letter.questions.includes(f));
+  for (let tries = 0; tries < 2 && !q; tries++) {
+    try {
+      const raw = await ask(questionPrompt(), { max_new_tokens: 40, temperature: tries ? 0.9 : 0.7 });
+      q = cleanQuestion(raw);
+      if (q && tooSimilar(q, letter.questions)) q = null;
+    } catch (err) { console.error(err); break; }
+  }
+  if (!q) q = FALLBACK_QUESTIONS.find((f) => !letter.questions.includes(f));
   letter.questions.push(q);
   await clerkType(qel, q);
   setAskBusy(false);
