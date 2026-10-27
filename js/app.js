@@ -1,4 +1,4 @@
-import * as net from './netwatch.js';
+import * as net from './netwatch.js?v=__V__';
 
 net.install();
 
@@ -90,7 +90,7 @@ function renderModels() {
 }
 
 // ---------------------------------------------------------------- worker
-const worker = new Worker(new URL('./ghost-worker.js' + (MOCK ? '?mock' : ''), import.meta.url), { type: 'module' });
+const worker = new Worker(new URL('./ghost-worker.js?v=__V__' + (MOCK ? '&mock' : ''), import.meta.url), { type: 'module' });
 let pending = new Map();
 let nextId = 1;
 let onProgress = () => {};
