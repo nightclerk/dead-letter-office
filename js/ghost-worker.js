@@ -119,10 +119,9 @@ async function mockLoad() {
 }
 async function mockGenerate({ id, messages }) {
   const prompt = messages.at(-1).content;
-  const isLetter = /^Write a letter/.test(prompt);
-  const name = (prompt.match(/to (.+?),/) || [, 'you'])[1];
-  const text = isLetter
-    ? `Dear ${name},\n\nI keep thinking about the small things. They were never small.\n\nI miss you.`
+  const note = (prompt.match(/Note: ([\s\S]*)$/) || [])[1];
+  const text = note
+    ? note.replace(/\bHe\b/g, 'You').replace(/\bhe\b/g, 'you').replace(/\bhis\b/g, 'your')
     : 'What did the kitchen sound like when they were in it?';
   for (const word of text.split(/(\s+)/)) {
     self.postMessage({ type: 'token', id, text: word });

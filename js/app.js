@@ -212,21 +212,30 @@ Reply with only the question, in the same language the person wrote in.`,
   }];
 }
 
-function letterPrompt() {
-  const { lines } = describe();
-  const rel = letter.rel ? `, my ${letter.rel.replace(/^my\s+/i, '')}` : '';
+// The letter is built one memory at a time. For each thing you told the
+// clerk, the model only turns it to face the person ("He whistled" becomes
+// "You whistled") and is told to add nothing. Small models invent details
+// when asked to write a whole letter; one sentence at a time, they don't.
+function turnPrompt(memory) {
   return [{
     role: 'user',
     content:
-`Write a letter from me to ${letter.name}${rel}, who is gone.
-Use ONLY the memories below. Do not invent any names, places, events, objects or details that are not in them.
-Memories:
-${lines}
+`Rewrite the note below so it is spoken directly to ${letter.name}: use "you" for ${letter.name} and "I" for the writer.
+Keep every detail exactly as written. Do not add feelings, details, names or comments. Keep it short.
+Reply with only the rewritten note, in the same language as the note.
 
-Write 110 to 170 words in first person, simple and honest, the way a real person talks. Not a poem, no clichés like "watching over me" or "in a better place".
-Start with "Dear ${letter.name}," and end with one short line of goodbye. No signature.
-Write it in the same language as my memories.`,
+Note: ${memory}`,
   }];
+}
+
+function cleanTurn(raw, original) {
+  let t = (raw || '').replace(/<[^>]+>/g, '').trim();
+  t = t.replace(/^(here('| i)s|sure|rewritten( note)?)[^:\n]*:\s*/i, '').replace(/^["“'*]+|["”'*]+$/g, '').trim();
+  t = t.split(/\n+/)[0].trim();
+  // If the model drifted (much longer or much shorter than what was said), keep the person's own words.
+  const ratio = t.length / Math.max(1, original.length);
+  if (!t || ratio > 2.2 || ratio < 0.35) return original;
+  return t;
 }
 
 function cleanQuestion(raw) {
@@ -238,14 +247,6 @@ function cleanQuestion(raw) {
   q = q.slice(0, qm + 1);
   if (q.length < 8 || q.length > 220 || /as an ai|i'm sorry|i cannot/i.test(q)) return null;
   return q;
-}
-
-function cleanLetter(raw) {
-  let t = (raw || '').replace(/<[^>]+>/g, '').trim();
-  const i = t.search(new RegExp('(Dear|Hi|Hello|Dearest)\\s', 'i'));
-  if (i > 0 && i < 120) t = t.slice(i);
-  t = t.replace(/\n?\s*(\[.*?name.*?\]|Love,?\s*\[.*\])\s*$/i, '').trim();
-  return t;
 }
 
 const isRTL = (s) => /[֐-׿؀-ۿ]/.test(s);
@@ -287,7 +288,7 @@ async function nextQuestion() {
   qel.textContent = ''; qel.classList.add('thinking');
   let q = null;
   try {
-    const raw = await ask(questionPrompt(), { max_new_tokens: 48, temperature: 0.8 });
+    const raw = await ask(questionPrompt(), { max_new_tokens: 48, temperature: 0.7 });
     q = cleanQuestion(raw);
   } catch (err) { console.error(err); }
   if (!q || letter.questions.includes(q)) q = FALLBACK_QUESTIONS.find((f) => !letter.questions.includes(f));
@@ -316,22 +317,32 @@ $('#ready-btn').addEventListener('click', () => {
 async function writeDraft() {
   show('draft');
   const ta = $('#letter');
-  ta.value = ''; ta.readOnly = true;
+  ta.readOnly = true;
   ta.dir = isRTL(letter.memories.join(' ')) ? 'rtl' : 'auto';
   $('#rewrite-btn').disabled = true; $('#done-btn').disabled = true;
-  $('#draft-note').textContent = 'Putting your words in order…';
-  let streamed = '';
-  try {
-    const raw = await ask(letterPrompt(), { max_new_tokens: 320, temperature: 0.7 }, (tok) => {
-      streamed += tok; ta.value = streamed; ta.scrollTop = ta.scrollHeight;
-    });
-    ta.value = cleanLetter(raw) || streamed;
-  } catch (err) {
-    console.error(err);
-    ta.value = `Dear ${letter.name},\n\n${letter.memories.join('\n\n')}\n\n`;
+  $('#draft-note').textContent = 'Putting your words in order, one at a time.';
+  let text = `Dear ${letter.name},\n\n`;
+  ta.value = text;
+  const turned = [];
+  for (const [i, memory] of letter.memories.entries()) {
+    let streamed = '';
+    const sep = i === 0 ? '' : i === 2 ? '\n\n' : ' ';
+    try {
+      const raw = await ask(turnPrompt(memory), { max_new_tokens: 80, do_sample: false, repetition_penalty: 1.05 }, (tok) => {
+        streamed += tok; ta.value = text + sep + streamed; ta.scrollTop = ta.scrollHeight;
+      });
+      turned.push(cleanTurn(raw, memory));
+    } catch (err) {
+      console.error(err);
+      turned.push(memory);
+    }
+    text += sep + turned.at(-1);
+    ta.value = text;
   }
+  text += '\n\nI remember. I wanted you to know that.\n';
+  ta.value = text;
   ta.readOnly = false;
-  $('#draft-note').textContent = 'Here it is, made only from what you told me. Change anything you like. It\'s your letter.';
+  $('#draft-note').textContent = 'Here it is, made only from what you told me. Change anything you like, and add the things only you can say.';
   $('#rewrite-btn').disabled = false; $('#done-btn').disabled = false;
 }
 
