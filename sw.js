@@ -1,6 +1,6 @@
 // Keeps the Dead Letter Office's own files on this device so it opens with the internet off.
 // The model files are cached separately by Transformers.js (Cache API).
-const VERSION = 'dlo-v2';
+const VERSION = 'dlo-v3';
 const SHELL = [
   './',
   './index.html',
@@ -45,6 +45,8 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(caches.match(e.request, { ignoreSearch: true }).then((hit) => hit || fetch(e.request).then(save)));
   } else {
     // The app itself: get the newest version when online, the saved copy when offline.
-    e.respondWith(fetch(e.request).then(save).catch(() => caches.match(e.request, { ignoreSearch: true })));
+    // Skip the browser's HTTP cache so a new release shows up right away.
+    const fresh = e.request.mode === 'navigate' ? e.request : new Request(e.request, { cache: 'no-cache' });
+    e.respondWith(fetch(fresh).then(save).catch(() => caches.match(e.request, { ignoreSearch: true })));
   }
 });
