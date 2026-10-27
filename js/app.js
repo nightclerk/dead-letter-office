@@ -179,7 +179,7 @@ $('#wake').addEventListener('click', () => {
 
 // ---------------------------------------------------------------- the letter
 const letter = { name: '', rel: '', items: [], questions: [] };
-const MAX_Q = 3;
+let maxQ = 3; // the clerk asks three questions; you can ask for one more
 
 // If the model's question is unusable, the clerk falls back to one of these.
 const FALLBACK_QUESTIONS = [
@@ -196,70 +196,41 @@ function describe() {
   return { who, lines };
 }
 
+// A 1B model follows a worked example far better than a list of rules,
+// so the prompt shows two good questions about other people.
 function questionPrompt() {
-  const { who, lines } = describe();
-  const asked = letter.questions.length ? `\nQuestions you already asked (do not repeat them):\n${letter.questions.map((q) => '- ' + q).join('\n')}` : '';
+  const rel = letter.rel ? `, their ${letter.rel.replace(/^my\s+/i, '')},` : '';
+  const lines = letter.items.map((it) => (it.q ? `- ${it.q} ${it.a}` : `- ${it.a}`)).join('\n');
+  const asked = letter.questions.length ? `\nYou already asked: ${letter.questions.join(' / ')}. Ask about something different now.\n` : '';
   return [{
     role: 'user',
     content:
-`You are a gentle, quiet companion helping a person write a letter to someone they have lost: ${who}.
-Here is what the person has shared so far:
+`Someone is writing a letter to ${letter.name}${rel} who has died. This is what they remember so far:
 ${lines}
 ${asked}
-Ask the person ONE new short, warm, specific question (at most 20 words) about a different small concrete moment: a sound, a smell, a place, a habit, a phrase. Build on what they shared.
-Do not give advice. Do not comfort. Do not mention death or loss. Do not answer for them.
-Reply with only the question, in the same language the person wrote in.`,
+Ask them one short question that helps them remember more. Start it with What, Where, When, Who or How. Ask about a sound, a smell, a place, a habit or something they used to say. Keep it under 15 words. Ask it in the same language they wrote in.
+
+Two examples of the kind of question to ask (about other people):
+- Where did she sit when she read the newspaper?
+- What did his coat smell like in winter?
+
+Your question:`,
   }];
 }
 
-// The letter is built one memory at a time. For each thing you told the
-// clerk, the model only turns it to face the person ("He whistled" becomes
-// "You whistled") and is told to add nothing. Small models invent details
-// when asked to write a whole letter; one sentence at a time, and checked
-// word by word against what you said, they don't get the chance.
-function turnPrompt(it) {
-  const source = it.q
-    ? `The writer was asked: "${it.q}"\nThe writer answered: "${it.a}"\nTurn the answer into one full sentence (using the question only for context).`
-    : `Note: "${it.a}"`;
-  return [{
-    role: 'user',
-    content:
-`Rewrite what the writer said so it is spoken directly to ${letter.name}: use "you" and "your" for ${letter.name}, and "I" and "me" for the writer.
-Keep every detail exactly. Do not add any new detail, time, place, feeling, name or comment.
-Reply with only the rewritten sentence, in the same language the writer used.
-
-${source}`,
-  }];
-}
-
-// Words a rewrite may introduce without adding meaning (pronouns, glue words).
-const GLUE = new Set(('you your yours yourself i me my mine we us our the a an and or but to of in on at with for from by as that this ' +
-  'it its is was were be been had have has did do does would used always when while then there so just one ' +
-  'smelled smell sounded sound looked said says told hands hand').split(' '));
-const words = (t) => (t.toLowerCase().match(/[\p{L}\p{N}']+/gu) || []).map((w) => w.replace(/'s$/, ''));
-
-// Plain grammar fallback for English when the model's rewrite can't be trusted.
+// The clerk never writes a word of your letter. In testing, Gemma asked to
+// write a whole letter gave a grandfather a favourite song nobody had
+// mentioned. So the model only asks questions, and the letter is made from
+// your answers, word for word. For English, "he" and "his" are turned into
+// "you" and "your" with plain grammar rules, no model involved.
 function pronounSwap(t) {
   return t.replace(/\b(He|She)\b/g, 'You').replace(/\b(he|she)\b/g, 'you')
     .replace(/\b(His|Her)\b/g, 'Your').replace(/\b(his|her)\b/g, 'your')
-    .replace(/\b(him)\b/g, 'you').replace(/\bhimself\b|\bherself\b/g, 'yourself')
+    .replace(/\bhim\b/g, 'you').replace(/\b(himself|herself)\b/g, 'yourself')
     .replace(/\b([Yy]ou) (was|is|has|does)\b/g, (m, y, v) => y + ' ' + ({ was: 'were', is: 'are', has: 'have', does: 'do' })[v]);
 }
-
-function cleanTurn(raw, it) {
-  let t = (raw || '').replace(/<[^>]+>/g, '').trim();
-  t = t.replace(/^(here('| i)s|sure|rewritten( note| sentence)?)[^:\n]*:\s*/i, '').replace(/^["“'*]+|["”'*]+$/g, '').trim();
-  t = t.split(/\n+/)[0].trim();
-  // Every meaningful word in the rewrite must come from what the person said (or the question).
-  const known = new Set([...words(it.a), ...words(it.q || ''), ...words(letter.name)]);
-  const invented = words(t).filter((w) => !known.has(w) && !GLUE.has(w) && w.length > 2);
-  const ratio = t.length / Math.max(1, it.a.length);
-  if (!t || invented.length > 1 || ratio > 2.6 || ratio < 0.4) {
-    console.info('[dlo] kept your own words; the rewrite added:', invented.join(', ') || '(length)');
-    return pronounSwap(it.a);
-  }
-  return t;
-}
+const isLatin = (t) => !/[^\u0000-ɏ -⁯‘-‟]/.test(t);
+const faceThem = (t) => (isLatin(t) ? pronounSwap(t) : t);
 
 function cleanQuestion(raw) {
   let q = (raw || '').replace(/<[^>]+>/g, '').replace(/^\s*(question:|q:)\s*/i, '').trim();
@@ -298,14 +269,15 @@ $('#who-form').addEventListener('submit', (e) => {
   letter.rel = $('#who-rel').value.trim();
   letter.items = [{ q: null, a: $('#who-memory').value.trim() }];
   letter.questions = [];
+  maxQ = 3;
   nextQuestion();
 });
 
 async function nextQuestion() {
-  if (letter.questions.length >= MAX_Q) return writeDraft();
+  if (letter.questions.length >= maxQ) return writeDraft();
   show('ask');
   const qel = $('#ghost-question');
-  $('#ask-count').textContent = `Question ${letter.questions.length + 1} of ${MAX_Q}`;
+  $('#ask-count').textContent = `Question ${letter.questions.length + 1} of ${maxQ}`;
   $('#answer').value = '';
   setAskBusy(true);
   qel.textContent = ''; qel.classList.add('thinking');
@@ -343,33 +315,24 @@ async function writeDraft() {
   ta.readOnly = true;
   ta.dir = isRTL(letter.items.map((i) => i.a).join(' ')) ? 'rtl' : 'auto';
   $('#rewrite-btn').disabled = true; $('#done-btn').disabled = true;
-  $('#draft-note').textContent = 'Putting your words in order, one at a time.';
-  let text = `Dear ${letter.name},\n\n`;
-  ta.value = text;
-  const turned = [];
-  for (const [i, it] of letter.items.entries()) {
-    let streamed = '';
-    const sep = i === 0 ? '' : i === 2 ? '\n\n' : ' ';
-    try {
-      const raw = await ask(turnPrompt(it), { max_new_tokens: 80, do_sample: false, repetition_penalty: 1.05 }, (tok) => {
-        streamed += tok; ta.value = text + sep + streamed; ta.scrollTop = ta.scrollHeight;
-      });
-      turned.push(cleanTurn(raw, it));
-    } catch (err) {
-      console.error(err);
-      turned.push(pronounSwap(it.a));
-    }
-    text += sep + turned.at(-1);
-    ta.value = text;
+  $('#draft-note').textContent = 'Putting your words in order.';
+  const paras = letter.items.map((it) => faceThem(it.a).replace(/\s+$/, ''))
+    .map((p) => (/[.!?…"”'’)]$/.test(p) ? p : p + '.'));
+  const full = `Dear ${letter.name},\n\n${paras.join('\n\n')}\n\nI remember. I wanted you to know that.\n`;
+  // Set it down at typing speed, so it feels written rather than pasted.
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  ta.value = '';
+  for (let i = 0; i < full.length && !reduce; i += 3) {
+    ta.value = full.slice(0, i);
+    await new Promise((r) => setTimeout(r, 12));
   }
-  text += '\n\nI remember. I wanted you to know that.\n';
-  ta.value = text;
+  ta.value = full;
   ta.readOnly = false;
-  $('#draft-note').textContent = 'Here it is, made only from what you told me. Change anything you like, and add the things only you can say.';
+  $('#draft-note').textContent = 'Every word here is yours. I only put them in order. Change anything, and add what only you can say.';
   $('#rewrite-btn').disabled = false; $('#done-btn').disabled = false;
 }
 
-$('#rewrite-btn').addEventListener('click', () => writeDraft());
+$('#rewrite-btn').addEventListener('click', () => { maxQ = letter.questions.length + 1; nextQuestion(); });
 $('#done-btn').addEventListener('click', () => show('farewell'));
 $('#back-btn').addEventListener('click', () => show('draft'));
 
