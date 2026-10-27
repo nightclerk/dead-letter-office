@@ -178,7 +178,7 @@ $('#wake').addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------- the letter
-const letter = { name: '', rel: '', memories: [], questions: [] };
+const letter = { name: '', rel: '', items: [], questions: [] };
 const MAX_Q = 3;
 
 // If the model's question is unusable, the clerk falls back to one of these.
@@ -192,7 +192,7 @@ const FALLBACK_QUESTIONS = [
 
 function describe() {
   const who = letter.rel ? `${letter.name} (${letter.rel})` : letter.name;
-  const lines = letter.memories.map((m) => `- ${m}`).join('\n');
+  const lines = letter.items.map((it) => (it.q ? `- Asked "${it.q}", they said: ${it.a}` : `- ${it.a}`)).join('\n');
   return { who, lines };
 }
 
@@ -206,7 +206,7 @@ function questionPrompt() {
 Here is what the person has shared so far:
 ${lines}
 ${asked}
-Ask the person ONE short, warm, specific question (at most 20 words) that helps them remember a small concrete moment: a sound, a smell, a place, a habit, a phrase. Build on what they shared.
+Ask the person ONE new short, warm, specific question (at most 20 words) about a different small concrete moment: a sound, a smell, a place, a habit, a phrase. Build on what they shared.
 Do not give advice. Do not comfort. Do not mention death or loss. Do not answer for them.
 Reply with only the question, in the same language the person wrote in.`,
   }];
@@ -215,26 +215,49 @@ Reply with only the question, in the same language the person wrote in.`,
 // The letter is built one memory at a time. For each thing you told the
 // clerk, the model only turns it to face the person ("He whistled" becomes
 // "You whistled") and is told to add nothing. Small models invent details
-// when asked to write a whole letter; one sentence at a time, they don't.
-function turnPrompt(memory) {
+// when asked to write a whole letter; one sentence at a time, and checked
+// word by word against what you said, they don't get the chance.
+function turnPrompt(it) {
+  const source = it.q
+    ? `The writer was asked: "${it.q}"\nThe writer answered: "${it.a}"\nTurn the answer into one full sentence (using the question only for context).`
+    : `Note: "${it.a}"`;
   return [{
     role: 'user',
     content:
-`Rewrite the note below so it is spoken directly to ${letter.name}: use "you" for ${letter.name} and "I" for the writer.
-Keep every detail exactly as written. Do not add feelings, details, names or comments. Keep it short.
-Reply with only the rewritten note, in the same language as the note.
+`Rewrite what the writer said so it is spoken directly to ${letter.name}: use "you" and "your" for ${letter.name}, and "I" and "me" for the writer.
+Keep every detail exactly. Do not add any new detail, time, place, feeling, name or comment.
+Reply with only the rewritten sentence, in the same language the writer used.
 
-Note: ${memory}`,
+${source}`,
   }];
 }
 
-function cleanTurn(raw, original) {
+// Words a rewrite may introduce without adding meaning (pronouns, glue words).
+const GLUE = new Set(('you your yours yourself i me my mine we us our the a an and or but to of in on at with for from by as that this ' +
+  'it its is was were be been had have has did do does would used always when while then there so just one ' +
+  'smelled smell sounded sound looked said says told hands hand').split(' '));
+const words = (t) => (t.toLowerCase().match(/[\p{L}\p{N}']+/gu) || []).map((w) => w.replace(/'s$/, ''));
+
+// Plain grammar fallback for English when the model's rewrite can't be trusted.
+function pronounSwap(t) {
+  return t.replace(/\b(He|She)\b/g, 'You').replace(/\b(he|she)\b/g, 'you')
+    .replace(/\b(His|Her)\b/g, 'Your').replace(/\b(his|her)\b/g, 'your')
+    .replace(/\b(him)\b/g, 'you').replace(/\bhimself\b|\bherself\b/g, 'yourself')
+    .replace(/\b([Yy]ou) (was|is|has|does)\b/g, (m, y, v) => y + ' ' + ({ was: 'were', is: 'are', has: 'have', does: 'do' })[v]);
+}
+
+function cleanTurn(raw, it) {
   let t = (raw || '').replace(/<[^>]+>/g, '').trim();
-  t = t.replace(/^(here('| i)s|sure|rewritten( note)?)[^:\n]*:\s*/i, '').replace(/^["“'*]+|["”'*]+$/g, '').trim();
+  t = t.replace(/^(here('| i)s|sure|rewritten( note| sentence)?)[^:\n]*:\s*/i, '').replace(/^["“'*]+|["”'*]+$/g, '').trim();
   t = t.split(/\n+/)[0].trim();
-  // If the model drifted (much longer or much shorter than what was said), keep the person's own words.
-  const ratio = t.length / Math.max(1, original.length);
-  if (!t || ratio > 2.2 || ratio < 0.35) return original;
+  // Every meaningful word in the rewrite must come from what the person said (or the question).
+  const known = new Set([...words(it.a), ...words(it.q || ''), ...words(letter.name)]);
+  const invented = words(t).filter((w) => !known.has(w) && !GLUE.has(w) && w.length > 2);
+  const ratio = t.length / Math.max(1, it.a.length);
+  if (!t || invented.length > 1 || ratio > 2.6 || ratio < 0.4) {
+    console.info('[dlo] kept your own words; the rewrite added:', invented.join(', ') || '(length)');
+    return pronounSwap(it.a);
+  }
   return t;
 }
 
@@ -273,7 +296,7 @@ $('#who-form').addEventListener('submit', (e) => {
   e.preventDefault();
   letter.name = $('#who-name').value.trim();
   letter.rel = $('#who-rel').value.trim();
-  letter.memories = [$('#who-memory').value.trim()];
+  letter.items = [{ q: null, a: $('#who-memory').value.trim() }];
   letter.questions = [];
   nextQuestion();
 });
@@ -295,7 +318,7 @@ async function nextQuestion() {
   letter.questions.push(q);
   await clerkType(qel, q);
   setAskBusy(false);
-  $('#answer').dir = isRTL(letter.memories.join(' ')) ? 'rtl' : 'auto';
+  $('#answer').dir = isRTL(letter.items.map((i) => i.a).join(' ')) ? 'rtl' : 'auto';
   $('#answer').focus({ preventScroll: true });
 }
 
@@ -304,13 +327,13 @@ function setAskBusy(b) { ['#answer-btn', '#skip-btn', '#ready-btn'].forEach((s) 
 $('#ask-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const a = $('#answer').value.trim();
-  if (a) letter.memories.push(a);
+  if (a) letter.items.push({ q: letter.questions.at(-1), a });
   nextQuestion();
 });
 $('#skip-btn').addEventListener('click', () => nextQuestion());
 $('#ready-btn').addEventListener('click', () => {
   const a = $('#answer').value.trim();
-  if (a) letter.memories.push(a);
+  if (a) letter.items.push({ q: letter.questions.at(-1), a });
   writeDraft();
 });
 
@@ -318,23 +341,23 @@ async function writeDraft() {
   show('draft');
   const ta = $('#letter');
   ta.readOnly = true;
-  ta.dir = isRTL(letter.memories.join(' ')) ? 'rtl' : 'auto';
+  ta.dir = isRTL(letter.items.map((i) => i.a).join(' ')) ? 'rtl' : 'auto';
   $('#rewrite-btn').disabled = true; $('#done-btn').disabled = true;
   $('#draft-note').textContent = 'Putting your words in order, one at a time.';
   let text = `Dear ${letter.name},\n\n`;
   ta.value = text;
   const turned = [];
-  for (const [i, memory] of letter.memories.entries()) {
+  for (const [i, it] of letter.items.entries()) {
     let streamed = '';
     const sep = i === 0 ? '' : i === 2 ? '\n\n' : ' ';
     try {
-      const raw = await ask(turnPrompt(memory), { max_new_tokens: 80, do_sample: false, repetition_penalty: 1.05 }, (tok) => {
+      const raw = await ask(turnPrompt(it), { max_new_tokens: 80, do_sample: false, repetition_penalty: 1.05 }, (tok) => {
         streamed += tok; ta.value = text + sep + streamed; ta.scrollTop = ta.scrollHeight;
       });
-      turned.push(cleanTurn(raw, memory));
+      turned.push(cleanTurn(raw, it));
     } catch (err) {
       console.error(err);
-      turned.push(memory);
+      turned.push(pronounSwap(it.a));
     }
     text += sep + turned.at(-1);
     ta.value = text;
@@ -424,7 +447,7 @@ function finish(how) {
   const s = net.snapshot();
   // Forget everything.
   $('#letter').value = '';
-  letter.name = ''; letter.rel = ''; letter.memories = []; letter.questions = [];
+  letter.name = ''; letter.rel = ''; letter.items = []; letter.questions = [];
   ['#who-name', '#who-rel', '#who-memory', '#answer'].forEach((sel) => ($(sel).value = ''));
   const mail = document.querySelector('.airmail'); mail.classList.remove('burning'); mail.style.setProperty('--burn', '-10%');
   $('#letter').readOnly = false;
