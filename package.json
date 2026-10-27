@@ -1,0 +1,16 @@
+{
+  "name": "dead-letter-office",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Write a letter to someone who died, with Gemma running entirely in your browser.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/privacy-check.mjs && node tests/smoke.mjs",
+    "vendor": "node scripts/vendor.mjs"
+  },
+  "devDependencies": {
+    "@huggingface/transformers": "4.3.2",
+    "playwright": "1.63.0"
+  }
+}

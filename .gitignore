@@ -1,0 +1,7 @@
+node_modules/
+_site/
+.DS_Store
+# Library files are copied from npm at build time (npm run vendor)
+vendor/*
+!vendor/README.md
+!vendor/LICENSE.transformers.txt
