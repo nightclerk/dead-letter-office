@@ -42,6 +42,7 @@ const clerk = await import('../js/clerk.js');
 const followUp = clerk.questionPrompt({ name: 'Dad', rel: '', items: [{ q: null, a: 'He fixed things.' }, { q: 'What did the garage smell like?', a: 'Oil and sawdust.' }], questions: ['What did the garage smell like?'] })[0].content.split('\nNow\n')[1];
 check(!followUp.includes('garage smell') && followUp.includes('He fixed things.') && followUp.includes('Oil and sawdust.'), 'a follow-up prompt shows the memory and the latest answer, not the old question');
 check(clerk.unkind('What did Grandpa Joe taste like when he held the net?', 'Grandpa Joe') && !clerk.unkind('What did the orange peel taste like?', 'Grandpa Avi'), 'a question about how a person tasted is never asked');
+check(clerk.tooSimilar('What did Uncle Dov often say while telling his jokes?', ['What did Uncle Dov often say while telling his jokes?'], 'Uncle Dov') && !clerk.tooSimilar('In what tone did Uncle Dov deliver his jokes?', ['What did Uncle Dov often say while telling his jokes?'], 'Uncle Dov'), 'the repeat filter catches a repeat, not a new question that shares filler words');
 
 try {
   await page.goto(origin + '/?mock');
