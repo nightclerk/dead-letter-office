@@ -80,6 +80,7 @@ try {
   await page.fill('#who-memory', 'היא תמיד שרה במטבח כשהיא בישלה מרק.');
   await page.click('#who-form button[type=submit]');
   await page.waitForSelector('#answer-btn:not([disabled])');
+  check(/[\u0590-\u05FF]/.test(await page.textContent('#ghost-question')), 'a Hebrew letter gets a Hebrew question');
   await page.click('#skip-btn');
   await page.waitForSelector('#answer-btn:not([disabled])');
   await page.fill('#answer', 'ריח של שמיר וסלרי.');
