@@ -12,12 +12,15 @@ export const FALLBACK_QUESTIONS = [
 
 // A 1B model follows worked examples far better than a list of rules.
 // Two short memory -> question pairs teach it to ask about a detail in
-// what you wrote. After the first question it looks at your latest answer,
-// so each question follows the conversation instead of circling back.
+// what you wrote. After the first question it sees your first memory and
+// your latest answer, so each question follows the conversation. It never
+// sees its own earlier question there: on the test bench (eval.html), when
+// it did, it copied that question back 11 times out of 16.
 export function questionPrompt(letter) {
   const rel = letter.rel ? `, their ${letter.rel.replace(/^my\s+/i, '')}` : '';
+  const first = letter.items[0];
   const last = letter.items.at(-1);
-  const memory = last.q ? `${last.q} ${last.a}` : last.a;
+  const memory = last === first ? first.a : `${first.a} ${last.a}`;
   const asked = letter.questions.length ? `\nDo not ask again: ${letter.questions.join(' / ')}\n` : '';
   return [{
     role: 'user',
@@ -61,6 +64,15 @@ export function cleanQuestion(raw) {
   return q;
 }
 
+// Questions a grieving person must never be asked. On the test bench a
+// small model once asked "What did Grandpa Joe taste like when he held the
+// net while fishing?"
+const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export function unkind(q, name) {
+  const who = ['he', 'she', 'they', 'him', 'her', ...(name ? [esc(name)] : [])].join('|');
+  return new RegExp(`\\b(${who})\\s+(\\w+\\s+)?tasted?\\b`, 'i').test(q);
+}
+
 // Ask the model up to twice. Returns { q, raws }; q is null when nothing
 // usable came back, and the office then uses a hand-written question.
 export async function modelQuestion(letter, ask) {
@@ -69,7 +81,7 @@ export async function modelQuestion(letter, ask) {
     const raw = await ask(questionPrompt(letter), { max_new_tokens: 40, temperature: tries ? 0.9 : 0.7 });
     raws.push(raw);
     const q = cleanQuestion(raw);
-    if (q && !tooSimilar(q, letter.questions)) return { q, raws };
+    if (q && !tooSimilar(q, letter.questions) && !unkind(q, letter.name)) return { q, raws };
   }
   return { q: null, raws };
 }
