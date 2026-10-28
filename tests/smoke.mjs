@@ -26,7 +26,8 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const origin = `http://127.0.0.1:${server.address().port}`;
 
 const browser = await chromium.launch();
-const page = await browser.newPage();
+const context = await browser.newContext();
+const page = await context.newPage();
 const requests = [];
 let woke = false;
 page.on('request', (r) => requests.push({ url: r.url(), afterWake: woke }));
@@ -69,7 +70,68 @@ try {
   check(after.length === 0, `no requests after wake (${after.map((r) => r.url).join(', ') || 'none'})`);
   const foreign = requests.filter((r) => !r.url.startsWith(origin) && !r.url.startsWith('data:') && !r.url.startsWith('blob:'));
   check(foreign.length === 0, `only own files loaded (${foreign.map((r) => r.url).join(', ') || 'none foreign'})`);
+
+  // A second letter, in Hebrew, using every other path: skip, ready early,
+  // one more question, go back and edit, return to sender (download).
+  await page.click('#again-btn');
+  await page.waitForSelector('[data-screen="who"]:not([hidden])');
+  await page.fill('#who-name', 'סבתא רחל');
+  await page.fill('#who-rel', '');
+  await page.fill('#who-memory', 'היא תמיד שרה במטבח כשהיא בישלה מרק.');
+  await page.click('#who-form button[type=submit]');
+  await page.waitForSelector('#answer-btn:not([disabled])');
+  await page.click('#skip-btn');
+  await page.waitForSelector('#answer-btn:not([disabled])');
+  await page.fill('#answer', 'ריח של שמיר וסלרי.');
+  await page.click('#ready-btn');
+  await page.waitForSelector('#done-btn:not([disabled])');
+  let heb = await page.inputValue('#letter');
+  check(heb.startsWith('סבתא רחל,') && heb.includes('ריח של שמיר וסלרי.') && !heb.includes('Dear'), 'Hebrew letter keeps the words as written, no English frame');
+  check((await page.getAttribute('#letter', 'dir')) === 'rtl', 'Hebrew letter is right-to-left');
+  await page.click('#rewrite-btn');
+  await page.waitForSelector('#answer-btn:not([disabled])');
+  check(await page.isVisible('[data-screen="ask"]'), 'one more question is offered');
+  await page.fill('#answer', 'היא קראה לי "ציפור".');
+  await page.click('#answer-btn');
+  await page.waitForSelector('#done-btn:not([disabled])');
+  heb = await page.inputValue('#letter');
+  check(heb.includes('ציפור'), 'the extra answer is in the letter');
+  await page.click('#done-btn');
+  await page.click('#back-btn');
+  check(await page.isVisible('[data-screen="draft"]'), 'go back and edit returns to the letter');
+  await page.click('#done-btn');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#keep-btn')]);
+  check(download.suggestedFilename().endsWith('.txt'), `return to sender saves a file (${download.suggestedFilename()})`);
+  await page.waitForSelector('[data-screen="after"]:not([hidden])');
+  check((await page.textContent('#pm-how')).includes('RETURNED TO SENDER'), 'postmark says returned to sender');
+
+  const after2 = requests.filter((r) => r.afterWake);
+  check(after2.length === 0, `still no requests after wake (${after2.map((r) => r.url).join(', ') || 'none'})`);
   check(errors.length === 0, `no page errors (${errors.join(' | ') || 'none'})`);
+
+  // Offline: the office must open with the internet switched off.
+  await page.waitForFunction(() => navigator.serviceWorker && navigator.serviceWorker.controller, null, { timeout: 15000 }).catch(() => null);
+  const controlled = await page.evaluate(() => !!(navigator.serviceWorker && navigator.serviceWorker.controller));
+  check(controlled, 'service worker controls the page');
+  await context.setOffline(true);
+  await page.reload();
+  check(await page.isVisible('[data-screen="intro"]').catch(() => false), 'the office opens offline');
+  await context.setOffline(false);
+
+  // Phone width: nothing may stick out sideways on any screen.
+  const phone = await browser.newPage({ viewport: { width: 360, height: 740 } });
+  await phone.goto(origin + '/?mock');
+  const overflow = async (name) => {
+    const o = await phone.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    check(o <= 0, `no sideways scroll on a phone: ${name}`);
+  };
+  await phone.waitForSelector('[data-screen="intro"]:not([hidden])'); await overflow('front desk');
+  await phone.click('#wake'); await phone.waitForSelector('[data-screen="who"]:not([hidden])'); await overflow('form');
+  await phone.fill('#who-name', 'Saba'); await phone.fill('#who-memory', 'He whistled.');
+  await phone.click('#who-form button[type=submit]'); await phone.waitForSelector('#answer-btn:not([disabled])'); await overflow('question');
+  await phone.click('#ready-btn'); await phone.waitForSelector('#done-btn:not([disabled])'); await overflow('letter');
+  await phone.click('#done-btn'); await overflow('dispatch');
+  await phone.click('#burn-btn'); await phone.waitForSelector('[data-screen="after"]:not([hidden])', { timeout: 20000 }); await overflow('postmark');
 } catch (e) {
   console.error('FAIL:', e);
   process.exitCode = 1;
