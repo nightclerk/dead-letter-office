@@ -41,11 +41,20 @@ Question:`,
   }];
 }
 
-const wordSet = (t) => new Set((t.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((w) => w.length > 2));
-export function tooSimilar(q, earlier) {
-  const a = wordSet(q);
+// Is a new question just an earlier one again? Compare only the words that
+// carry meaning: on the test bench, counting "what", "did", "when" and the
+// person's name made "In what tone did Uncle Dov deliver his jokes?" look
+// like a repeat of "What did Uncle Dov often say while telling his jokes?".
+const STOP = new Set(('what did does do the and was were his her she him they them their with when where while how which who '
+  + 'you your for from that this into onto about like used use often always every just very there then than have had has are '
+  + 'its').split(' '));
+const wordSet = (t, skip = new Set()) => new Set((t.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])
+  .filter((w) => w.length > 2 && !STOP.has(w) && !skip.has(w)));
+export function tooSimilar(q, earlier, name = '') {
+  const skip = wordSet(name);
+  const a = wordSet(q, skip);
   return earlier.some((e) => {
-    const b = wordSet(e);
+    const b = wordSet(e, skip);
     const shared = [...a].filter((w) => b.has(w)).length;
     return shared / Math.max(1, Math.min(a.size, b.size)) > 0.6;
   });
@@ -81,7 +90,7 @@ export async function modelQuestion(letter, ask) {
     const raw = await ask(questionPrompt(letter), { max_new_tokens: 40, temperature: tries ? 0.9 : 0.7 });
     raws.push(raw);
     const q = cleanQuestion(raw);
-    if (q && !tooSimilar(q, letter.questions) && !unkind(q, letter.name)) return { q, raws };
+    if (q && !tooSimilar(q, letter.questions, letter.name) && !unkind(q, letter.name)) return { q, raws };
   }
   return { q: null, raws };
 }
