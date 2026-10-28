@@ -14,6 +14,8 @@ for (const file of files) {
   let text = await readFile(file, 'utf8');
   // Plain <a href="..."> links are allowed: they only load if a person clicks them.
   if (file.endsWith('.html')) text = text.replace(/<a\b[^>]*\bhref="https?:\/\/[^"]*"[^>]*>/g, '<a>');
+  // Link-preview tags are read by other sites when someone shares the link; the page never fetches them.
+  if (file.endsWith('.html')) text = text.replace(/<meta (property="og:|name="twitter:)[^>]*>/g, '<meta>');
   // Comments explain things; they don't run.
   text = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/<!--[\s\S]*?-->/g, '');
   for (const m of text.matchAll(URL_RE)) {
