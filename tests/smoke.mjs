@@ -37,6 +37,12 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
 function check(cond, msg) { if (!cond) { console.error('FAIL:', msg); process.exitCode = 1; } else console.log('ok -', msg); }
 
+// The clerk's prompt rules, found on the question test bench (eval.html).
+const clerk = await import('../js/clerk.js');
+const followUp = clerk.questionPrompt({ name: 'Dad', rel: '', items: [{ q: null, a: 'He fixed things.' }, { q: 'What did the garage smell like?', a: 'Oil and sawdust.' }], questions: ['What did the garage smell like?'] })[0].content.split('\nNow\n')[1];
+check(!followUp.includes('garage smell') && followUp.includes('He fixed things.') && followUp.includes('Oil and sawdust.'), 'a follow-up prompt shows the memory and the latest answer, not the old question');
+check(clerk.unkind('What did Grandpa Joe taste like when he held the net?', 'Grandpa Joe') && !clerk.unkind('What did the orange peel taste like?', 'Grandpa Avi'), 'a question about how a person tasted is never asked');
+
 try {
   await page.goto(origin + '/?mock');
   await page.waitForSelector('[data-screen="intro"]:not([hidden])');
