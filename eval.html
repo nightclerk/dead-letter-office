@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Question Test Bench</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#ece4d4">
+  <link rel="stylesheet" href="css/style.css?v=__V__">
+  <style>
+    .bench { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+    .bench h1 { font-family: var(--display, inherit); font-weight: 400; font-size: clamp(1.8rem, 5vw, 2.6rem); margin: 0 0 8px; }
+    .bench p { max-width: 62ch; }
+    .bench .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 20px 0; }
+    .bench select { font: inherit; padding: 8px 10px; background: transparent; border: 1px solid var(--ink); color: var(--ink); }
+    .bench #status { min-height: 1.5em; }
+    .bench .scroll { overflow-x: auto; }
+    .bench table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+    .bench th, .bench td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px dashed rgba(31, 27, 22, 0.25); }
+    .bench th { font-family: var(--mono); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 400; }
+    .bench td:nth-child(3) { font-family: var(--mono); }
+  </style>
+</head>
+<body>
+  <main class="bench">
+    <p class="mono small"><a href="./">← The Dead Letter Office</a></p>
+    <h1>Question test bench</h1>
+    <p>The clerk's only job is to ask. This page runs the clerk's real prompt, the same code the office uses, over sixteen invented memories, two questions each, and counts what comes back: how many are real questions, how many needed a second try, how many fell back to a hand-written question, and how many pick up a word from what was just written. Like the office, it runs entirely in this tab. Answers are sampled, so each run is a little different.</p>
+    <div class="controls">
+      <select id="model" aria-label="Clerk">
+        <option value="gemma3-1b">Gemma 3 · 1B</option>
+        <option value="gemma4-e2b">Gemma 4 · E2B</option>
+      </select>
+      <button class="btn" id="run">Run the bench</button>
+    </div>
+    <p class="mono small" id="status" role="status" aria-live="polite"></p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>#</th><th>They wrote</th><th>The clerk asked</th><th>Tries</th><th>Secs</th><th>Picks up a word</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </main>
+  <script type="module" src="js/eval.js?v=__V__"></script>
+</body>
+</html>

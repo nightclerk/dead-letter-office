@@ -6,6 +6,7 @@ const SHELL = [
   './index.html',
   './css/style.css',
   './js/app.js',
+  './js/clerk.js',
   './js/netwatch.js',
   './js/ghost-worker.js',
   './vendor/transformers.min.js',
