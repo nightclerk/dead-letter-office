@@ -1,4 +1,5 @@
 import * as net from './netwatch.js?v=__V__';
+import { modelQuestion, FALLBACK_QUESTIONS } from './clerk.js?v=__V__';
 
 net.install();
 
@@ -209,15 +210,6 @@ $('#wake').addEventListener('click', () => {
 const letter = { name: '', rel: '', items: [], questions: [] };
 let maxQ = 3; // the clerk asks three questions; you can ask for one more
 
-// If the model's question is unusable, the clerk falls back to one of these.
-const FALLBACK_QUESTIONS = [
-  'What is a sound that still brings them back to you?',
-  'Where did you most often find them, and what were they doing?',
-  'What did they always say, or always do, that no one else did?',
-  'What is something you never got to tell them?',
-  'What did they teach you without meaning to?',
-];
-
 // In Hebrew the small models misread too much (in testing, Gemma turned a
 // grandmother's Friday chicken soup into pork sausage), so a Hebrew letter
 // gets questions written by hand instead of generated ones.
@@ -229,50 +221,6 @@ const HEBREW_QUESTIONS = [
   'מה לא הספקת להגיד להם?',
 ];
 const isHebrew = () => /[\u0590-\u05FF]/.test(letter.name + letter.items.map((i) => i.a).join(' '));
-
-function describe() {
-  const who = letter.rel ? `${letter.name} (${letter.rel})` : letter.name;
-  const lines = letter.items.map((it) => (it.q ? `- Asked "${it.q}", they said: ${it.a}` : `- ${it.a}`)).join('\n');
-  return { who, lines };
-}
-
-// A 1B model follows worked examples far better than a list of rules.
-// Two short memory -> question pairs teach it to ask about a detail in
-// what you wrote. After the first question it looks at your latest answer,
-// so each question follows the conversation instead of circling back.
-function questionPrompt() {
-  const rel = letter.rel ? `, their ${letter.rel.replace(/^my\s+/i, '')}` : '';
-  const last = letter.items.at(-1);
-  const memory = last.q ? `${last.q} ${last.a}` : last.a;
-  const asked = letter.questions.length ? `\nDo not ask again: ${letter.questions.join(' / ')}\n` : '';
-  return [{
-    role: 'user',
-    content:
-`You help people remember someone who has died by asking one short question about a detail in what they wrote. The question names a sense (sound, smell, sight, touch, taste), a place, or something the person used to say. Ask it in the language they wrote in.
-
-Example 1
-They remember about Rosa: She read the newspaper every morning before work.
-Question: Where did Rosa sit when she read the newspaper?
-
-Example 2
-They remember about Uncle Sam: He fixed bicycles in the garage on Sundays.
-Question: What did the garage smell like when Uncle Sam was working?
-${asked}
-Now
-They remember about ${letter.name}${rel}: ${memory}
-Question:`,
-  }];
-}
-
-const wordSet = (t) => new Set((t.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((w) => w.length > 2));
-function tooSimilar(q, earlier) {
-  const a = wordSet(q);
-  return earlier.some((e) => {
-    const b = wordSet(e);
-    const shared = [...a].filter((w) => b.has(w)).length;
-    return shared / Math.max(1, Math.min(a.size, b.size)) > 0.6;
-  });
-}
 
 // The clerk never writes a word of your letter. In testing, Gemma asked to
 // write a whole letter gave a grandfather a favourite song nobody had
@@ -287,17 +235,6 @@ function pronounSwap(t) {
 }
 const isLatin = (t) => !/[^\u0000-ɏ -⁯‘-‟]/.test(t);
 const faceThem = (t) => (isLatin(t) ? pronounSwap(t) : t);
-
-function cleanQuestion(raw) {
-  let q = (raw || '').replace(/<[^>]+>/g, '').replace(/^\s*(question:|q:)\s*/i, '').trim();
-  q = q.split('\n').map((s) => s.trim()).find((s) => s.length > 3) || '';
-  q = q.replace(/^["“'*\s]+|["”'*\s]+$/g, '');
-  const qm = q.search(/[?？؟]/);
-  if (qm === -1) return null;
-  q = q.slice(0, qm + 1);
-  if (q.length < 8 || q.length > 220 || /as an ai|i'm sorry|i cannot/i.test(q)) return null;
-  return q;
-}
 
 const isRTL = (s) => /[֐-׿؀-ۿ]/.test(s);
 
@@ -342,12 +279,8 @@ async function nextQuestion() {
     await new Promise((r) => setTimeout(r, 900));
     q = (isHebrew() ? HEBREW_QUESTIONS : FALLBACK_QUESTIONS).find((h) => !letter.questions.includes(h)) || null;
   }
-  for (let tries = 0; tries < 2 && !q && chosen.id; tries++) {
-    try {
-      const raw = await ask(questionPrompt(), { max_new_tokens: 40, temperature: tries ? 0.9 : 0.7 });
-      q = cleanQuestion(raw);
-      if (q && tooSimilar(q, letter.questions)) q = null;
-    } catch (err) { console.error(err); break; }
+  if (!q && chosen.id) {
+    try { q = (await modelQuestion(letter, ask)).q; } catch (err) { console.error(err); }
   }
   if (!q) q = FALLBACK_QUESTIONS.find((f) => !letter.questions.includes(f)) || FALLBACK_QUESTIONS.at(-1);
   letter.questions.push(q);
