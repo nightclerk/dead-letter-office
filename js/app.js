@@ -20,9 +20,13 @@ const MODELS = [
     blurb: 'The newest Gemma. Better with nuance and with languages other than English. A big download that needs a recent graphics card.',
   },
   {
-    key: 'gemma3-270m', id: 'onnx-community/gemma-3-270m-it-ONNX',
-    name: 'Gemma 3 · 270M', size: { f16: '≈ 280 MB', f32: '≈ 330 MB', wasm: '≈ 330 MB' }, dtype: { f16: 'q4f16', f32: 'q4', wasm: 'q4' }, needs: 'any',
-    blurb: 'Small enough to work without a graphics card. Slower, with simpler words.',
+    // No model at all. In testing, Gemma 3 270M on the CPU loaded in over a
+    // minute and then answered "Okay, I understand." plus broken words instead of
+    // asking anything, so a browser without WebGPU gets hand-written
+    // questions rather than a clerk that only pretends to listen.
+    key: 'paper', id: null,
+    name: 'The paper clerk', size: { f16: 'no download', f32: 'no download' }, needs: 'any',
+    blurb: 'No model. Asks from a short list of questions written by hand, so it works in any browser, right away.',
   },
 ];
 
@@ -62,7 +66,8 @@ net.onChange((s) => {
 let gpuOK = false;
 let f16OK = false; // some graphics cards can't do 16-bit float math in shaders
 async function detectGPU() {
-  if (params.has('cpu')) { gpuOK = false; f16OK = false; return; } // ?cpu forces the CPU path
+  if (params.has('cpu')) { gpuOK = false; f16OK = false; return; } // ?cpu: act like a browser without WebGPU
+  if (MOCK) { gpuOK = true; f16OK = true; return; } // test mode pretends, so every clerk can be walked through
   try {
     const adapter = navigator.gpu && await navigator.gpu.requestAdapter();
     gpuOK = !!adapter;
@@ -71,13 +76,13 @@ async function detectGPU() {
 }
 // Which build of the weights fits this device: 4-bit weights with 16-bit math
 // where the GPU supports it, 4-bit weights with 32-bit math where it doesn't.
-const variant = () => (!gpuOK ? 'wasm' : f16OK ? 'f16' : 'f32');
+const variant = () => (f16OK ? 'f16' : 'f32');
 function renderModels() {
   const box = $('#models');
   box.querySelectorAll('.model').forEach((n) => n.remove());
-  // Phones get the small clerk by default: a 1B model is a lot to ask of one.
+  // Phones start with the paper clerk: an 800 MB model is a lot to ask of one.
   const phone = navigator.userAgentData?.mobile ?? /Android|iPhone|iPad/i.test(navigator.userAgent);
-  const firstAvail = phone ? MODELS.find((m) => m.key === 'gemma3-270m') : MODELS.find((m) => m.needs === 'any' || gpuOK);
+  const firstAvail = phone || !gpuOK ? MODELS.find((m) => m.key === 'paper') : MODELS[0];
   for (const m of MODELS) {
     const ok = m.needs === 'any' || gpuOK;
     const label = document.createElement('label');
@@ -88,8 +93,8 @@ function renderModels() {
   }
   $('#device-note').textContent = gpuOK
     ? 'This browser has WebGPU, so the clerk can use your graphics card.'
-    : 'This browser has no WebGPU, so only the small clerk can work here, on the CPU. Chrome or Edge on a laptop or desktop works best.';
-  $('#branch').textContent = 'Branch: this browser · ' + (gpuOK ? 'WebGPU' : 'CPU');
+    : 'This browser has no WebGPU, so Gemma can\'t run here. The paper clerk can. To meet Gemma, use Chrome or Edge on a laptop or desktop.';
+  $('#branch').textContent = 'Branch: this browser · ' + (gpuOK ? 'WebGPU' : 'paper only');
 }
 
 // ---------------------------------------------------------------- worker
@@ -135,12 +140,22 @@ $('#wake').addEventListener('click', () => {
   $('#wake').disabled = true;
   const key = document.querySelector('input[name="model"]:checked')?.value;
   chosen = MODELS.find((m) => m.key === key) || MODELS.at(-1);
-  const device = gpuOK ? 'webgpu' : 'wasm';
-  const dtype = chosen.dtype[variant()] || chosen.dtype.f32;
   show('loading');
   $('#load-log').textContent = '';
+  if (!chosen.id) {
+    log('clerk requested: the paper clerk (no model, nothing to download)');
+    fontsReady.then(() => {
+      net.setPhase('silent');
+      log('at the desk');
+      $('#ghost-hello').textContent = 'Good evening. Who is the letter for?';
+      setTimeout(() => show('who'), 600);
+    });
+    return;
+  }
+  const device = 'webgpu';
+  const dtype = chosen.dtype[variant()];
   log(`clerk requested: ${chosen.name} (${chosen.id})`);
-  log(device === 'webgpu' ? `graphics card found (WebGPU${f16OK ? ', 16-bit' : ', 32-bit'})` : 'no WebGPU, the clerk will work on the CPU');
+  log(`graphics card found (WebGPU${f16OK ? ', 16-bit' : ', 32-bit'})`);
   net.setPhase('downloading');
   const started = performance.now();
   let lastPhase = '';
@@ -178,7 +193,9 @@ $('#wake').addEventListener('click', () => {
   onLoadError = (err) => {
     console.error(err);
     log('the clerk could not come down: ' + err.message);
-    $('#load-status').textContent = 'Try the small clerk, or a recent Chrome or Edge.';
+    $('#load-status').textContent = chosen.key === 'gemma3-1b'
+      ? 'Try again, or choose the paper clerk, which needs no model.'
+      : 'Try Gemma 3 1B, which is smaller, or the paper clerk, which needs no model.';
     const back = document.createElement('button');
     back.className = 'btn ghost';
     back.textContent = 'Choose another clerk';
@@ -321,18 +338,18 @@ async function nextQuestion() {
   setAskBusy(true);
   qel.textContent = ''; qel.classList.add('thinking');
   let q = null;
-  if (isHebrew()) {
+  if (isHebrew() || !chosen.id) {
     await new Promise((r) => setTimeout(r, 900));
-    q = HEBREW_QUESTIONS.find((h) => !letter.questions.includes(h)) || null;
+    q = (isHebrew() ? HEBREW_QUESTIONS : FALLBACK_QUESTIONS).find((h) => !letter.questions.includes(h)) || null;
   }
-  for (let tries = 0; tries < 2 && !q; tries++) {
+  for (let tries = 0; tries < 2 && !q && chosen.id; tries++) {
     try {
       const raw = await ask(questionPrompt(), { max_new_tokens: 40, temperature: tries ? 0.9 : 0.7 });
       q = cleanQuestion(raw);
       if (q && tooSimilar(q, letter.questions)) q = null;
     } catch (err) { console.error(err); break; }
   }
-  if (!q) q = FALLBACK_QUESTIONS.find((f) => !letter.questions.includes(f));
+  if (!q) q = FALLBACK_QUESTIONS.find((f) => !letter.questions.includes(f)) || FALLBACK_QUESTIONS.at(-1);
   letter.questions.push(q);
   await clerkType(qel, q);
   setAskBusy(false);
