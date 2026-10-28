@@ -62,6 +62,7 @@ net.onChange((s) => {
 let gpuOK = false;
 let f16OK = false; // some graphics cards can't do 16-bit float math in shaders
 async function detectGPU() {
+  if (params.has('cpu')) { gpuOK = false; f16OK = false; return; } // ?cpu forces the CPU path
   try {
     const adapter = navigator.gpu && await navigator.gpu.requestAdapter();
     gpuOK = !!adapter;
@@ -74,7 +75,9 @@ const variant = () => (!gpuOK ? 'wasm' : f16OK ? 'f16' : 'f32');
 function renderModels() {
   const box = $('#models');
   box.querySelectorAll('.model').forEach((n) => n.remove());
-  const firstAvail = MODELS.find((m) => m.needs === 'any' || gpuOK);
+  // Phones get the small clerk by default: a 1B model is a lot to ask of one.
+  const phone = navigator.userAgentData?.mobile ?? /Android|iPhone|iPad/i.test(navigator.userAgent);
+  const firstAvail = phone ? MODELS.find((m) => m.key === 'gemma3-270m') : MODELS.find((m) => m.needs === 'any' || gpuOK);
   for (const m of MODELS) {
     const ok = m.needs === 'any' || gpuOK;
     const label = document.createElement('label');
@@ -128,6 +131,8 @@ function log(line) {
   el.textContent += (el.textContent ? '\n' : '') + '> ' + line;
 }
 $('#wake').addEventListener('click', () => {
+  if ($('#wake').disabled) return;
+  $('#wake').disabled = true;
   const key = document.querySelector('input[name="model"]:checked')?.value;
   chosen = MODELS.find((m) => m.key === key) || MODELS.at(-1);
   const device = gpuOK ? 'webgpu' : 'wasm';
@@ -154,9 +159,15 @@ $('#wake').addEventListener('click', () => {
       bar.firstElementChild.style.width = pct.toFixed(1) + '%';
       bar.setAttribute('aria-valuenow', pct.toFixed(0));
       $('#load-status').textContent = `${fmtBytes(p.loaded)} of ${fmtBytes(p.total)}. On a second visit this comes from your browser's own storage.`;
+      if (p.loaded >= p.total && lastPhase === 'download') {
+        lastPhase = 'unpacking';
+        log('all files here, setting the clerk up on your graphics card (this can take a minute)');
+        $('#load-status').textContent = 'Setting up on this device. The bigger the clerk, the longer this takes.';
+      }
     }
   };
-  onReady = (m) => {
+  onReady = async (m) => {
+    await fontsReady;
     net.setPhase('silent');
     const secs = ((performance.now() - started) / 1000).toFixed(0);
     log(`at the desk after ${secs} s`);
@@ -345,7 +356,10 @@ async function writeDraft() {
   $('#draft-note').textContent = 'Putting your words in order.';
   const paras = letter.items.map((it) => faceThem(it.a).replace(/\s+$/, ''))
     .map((p) => (/[.!?…"”'’)]$/.test(p) ? p : p + '.'));
-  const full = `Dear ${letter.name},\n\n${paras.join('\n\n')}\n\nI remember. I wanted you to know that.\n`;
+  const latin = isLatin(letter.items.map((i) => i.a).join(' ') + letter.name);
+  const full = latin
+    ? `Dear ${letter.name},\n\n${paras.join('\n\n')}\n\nI remember. I wanted you to know that.\n`
+    : `${letter.name},\n\n${paras.join('\n\n')}\n`;
   // Set it down at typing speed, so it feels written rather than pasted.
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   ta.value = '';
@@ -370,8 +384,10 @@ $('#keep-btn').addEventListener('click', () => {
   const blob = new Blob([$('#letter').value], { type: 'text/plain;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `letter-to-${letter.name.replace(/[^\p{L}\p{N}]+/gu, '-').toLowerCase() || 'you'}.txt`;
+  a.download = `dead-letter-${new Date().toISOString().slice(0, 10)}.txt`;
+  document.body.append(a);
   a.click();
+  a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   finish('kept');
 });
@@ -464,9 +480,15 @@ function finish(how) {
 $('#again-btn').addEventListener('click', () => show('who'));
 
 // ---------------------------------------------------------------- boot
-if ('serviceWorker' in navigator && !MOCK && location.protocol === 'https:') {
+if ('serviceWorker' in navigator && isSecureContext) {
   navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('sw', e));
 }
+// Load every font now, while the page is still allowed to fetch its own
+// files. Otherwise the Hebrew or bold face would load later, mid-letter, and
+// the counter would (rightly) count it as a request after the clerk arrived.
+const FACES = ['400 1em "Caslon Display"', '400 1em Caslon', 'italic 400 1em Caslon', '700 1em Caslon',
+  '400 1em "Courier Prime"', '700 1em "Courier Prime"', '400 1em "Frank Ruhl"', '700 1em "Frank Ruhl"'];
+const fontsReady = Promise.all(FACES.map((f) => document.fonts.load(f, f.includes('Frank') ? 'אב' : 'Ab').catch(() => null)));
 await detectGPU();
 renderModels();
 show('intro');
