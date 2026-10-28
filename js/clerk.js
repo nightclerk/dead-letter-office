@@ -25,7 +25,7 @@ export function questionPrompt(letter) {
   return [{
     role: 'user',
     content:
-`You help people remember someone who has died by asking one short question about a detail in what they wrote. The question names a sense (sound, smell, sight, touch, taste), a place, or something the person used to say. Ask it in the language they wrote in.
+`You help people remember someone who has died by asking one short question about a detail in what they wrote. The question names a sense (sound, smell, sight, touch), a place, or something the person used to say. Ask it in the language they wrote in.
 
 Example 1
 They remember about Rosa: She read the newspaper every morning before work.
@@ -49,7 +49,9 @@ const STOP = new Set(('what did does do the and was were his her she him they th
   + 'you your for from that this into onto about like used use often always every just very there then than have had has are '
   + 'its').split(' '));
 const wordSet = (t, skip = new Set()) => new Set((t.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])
-  .filter((w) => w.length > 2 && !STOP.has(w) && !skip.has(w)));
+  .filter((w) => w.length > 2 && !STOP.has(w))
+  .map((w) => (w.length > 4 ? w.replace(/s$/, '') : w)) // "pancakes" and "pancake" are the same thing
+  .filter((w) => !skip.has(w)));
 export function tooSimilar(q, earlier, name = '') {
   const skip = wordSet(name);
   const a = wordSet(q, skip);
@@ -73,6 +75,8 @@ export function cleanQuestion(raw) {
   return q;
 }
 
+// The prompt leaves "taste" out of the senses: on the test bench the 1B
+// model attached it to anything, as in "What did the piano taste like?".
 // Questions a grieving person must never be asked. On the test bench a
 // small model once asked "What did Grandpa Joe taste like when he held the
 // net while fishing?"
