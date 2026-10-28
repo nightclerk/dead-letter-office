@@ -5,7 +5,7 @@
 
 **A place to write to someone who died, with a night clerk that lives only in your browser.**
 
-**Try it:** https://nightclerk.github.io/dead-letter-office/ (Chrome or Edge with WebGPU; add `?mock` to walk through without downloading a model, or `?cpu` to force the CPU path)
+**Try it:** https://nightclerk.github.io/dead-letter-office/ (Chrome or Edge with WebGPU; add `?mock` to walk through without downloading a model, or `?cpu` to see what a browser without WebGPU gets)
 
 ![A full run: choosing a clerk, the model loading, the questions, the letter, and the letter burning](docs/demo.gif)
 
@@ -27,9 +27,11 @@ A letter to your dead mother is about the most private thing you will ever write
 |---|---|---|
 | Gemma 3 · 1B (recommended) | ≈ 760 MB (16-bit GPUs) / 860 MB | WebGPU |
 | Gemma 4 · E2B | ≈ 3.1 GB / 3.6 GB | WebGPU, recent GPU |
-| Gemma 3 · 270M | ≈ 280 MB / 330 MB | WebGPU or CPU (WASM) |
+| The paper clerk | nothing | any browser: no model, hand-written questions |
 
-All are the `onnx-community` ONNX conversions on Hugging Face with 4-bit weights. The app checks whether your graphics card supports 16-bit shader math (`shader-f16`) and picks `q4f16` or `q4` to match. (The first test on a real laptop failed exactly there, so now it asks first.)
+Both Gemma models are the `onnx-community` ONNX conversions on Hugging Face with 4-bit weights. The app checks whether your graphics card supports 16-bit shader math (`shader-f16`) and picks `q4f16` or `q4` to match. (The first test on a real laptop failed exactly there, so now it asks first.)
+
+There used to be a third Gemma, the 270M model on the CPU for browsers without WebGPU. In testing it took over a minute to load and then answered "Okay, I understand." followed by broken words, instead of asking anything. A clerk that only pretends to listen is worse than none, so those browsers now get the paper clerk, which asks from a short list of questions written by hand, and says so.
 
 ## How it works
 
@@ -47,7 +49,7 @@ All are the `onnx-community` ONNX conversions on Hugging Face with 4-bit weights
 `.github/workflows/ship.yml` runs on every push:
 
 1. **Static check** (`scripts/privacy-check.mjs`): our own code may not reference any outside server, only plain links a person can click.
-2. **Runtime check** (`tests/smoke.mjs`): a headless Chromium walks through two letters in test mode (`?mock`, canned replies, no model), one in English and one in Hebrew, using every button: skip, ready early, one more question, go back and edit, deliver by fire, return to sender. It records every request. The build fails if a single request happens after the clerk arrives, if the page loads anything that isn't its own file, if the office doesn't open with the network switched off, or if any screen scrolls sideways on a 360px phone.
+2. **Runtime check** (`tests/smoke.mjs`): a headless Chromium walks through two letters in test mode (`?mock`, canned replies, no model), one in English and one in Hebrew, plus one with the paper clerk as a browser without WebGPU would see it, using every button: skip, ready early, one more question, go back and edit, deliver by fire, return to sender. It records every request. The build fails if a single request happens after the clerk arrives, if the page loads anything that isn't its own file, if the office doesn't open with the network switched off, or if any screen scrolls sideways on a 360px phone.
 3. Only then is the site published to GitHub Pages.
 
 `.github/workflows/model-watch.yml` checks once a week that every Gemma model the app offers can still be downloaded, and opens an issue if one has gone missing. An open model is only useful while it can still be downloaded.
