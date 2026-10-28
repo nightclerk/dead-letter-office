@@ -156,6 +156,14 @@ try {
   await paper.waitForSelector('#done-btn:not([disabled])');
   check((await paper.inputValue('#letter')).includes('The kettle.'), 'the paper clerk sets down the letter');
   check(paperReq.length === 0, `the paper clerk makes no requests (${paperReq.join(', ') || 'none'})`);
+
+  // The question test bench loads cleanly and offers both Gemma clerks.
+  const bench = await browser.newPage();
+  const benchErrors = [];
+  bench.on('pageerror', (e) => benchErrors.push(String(e)));
+  await bench.goto(origin + '/eval.html');
+  await bench.waitForSelector('#run');
+  check((await bench.$$eval('#model option', (o) => o.length)) === 2 && benchErrors.length === 0, `the question bench loads (${benchErrors.join(' | ') || 'no errors'})`);
 } catch (e) {
   console.error('FAIL:', e);
   process.exitCode = 1;
