@@ -1,6 +1,6 @@
 // Keeps the Dead Letter Office's own files on this device so it opens with the internet off.
 // The model files are cached separately by Transformers.js (Cache API).
-const VERSION = 'dlo-v3';
+const VERSION = 'dlo-__V__'; // stamped with the release on deploy, so each release gets a fresh cache
 const SHELL = [
   './',
   './index.html',
