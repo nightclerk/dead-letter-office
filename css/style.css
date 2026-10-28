@@ -228,7 +228,7 @@ textarea.lined {
 .choice.keep:hover { border-color: var(--blue); } .choice.keep:hover .tick { color: var(--blue); border-color: var(--blue); }
 
 /* ------------------------------------------------------------ postmark */
-.postmark-wrap { margin: 8px 0 4px; }
+.postmark-wrap { margin: 8px 0 4px; overflow: hidden; padding: 10px 0; }
 .postmark { width: min(420px, 100%); height: auto; color: var(--red); transform: rotate(-8deg); opacity: 0.9; }
 .postmark.keep { color: var(--blue); }
 .postmark.thump { animation: thump 0.5s cubic-bezier(.2,.9,.3,1.3) both; }
