@@ -201,6 +201,18 @@ const FALLBACK_QUESTIONS = [
   'What did they teach you without meaning to?',
 ];
 
+// In Hebrew the small models misread too much (in testing, Gemma turned a
+// grandmother's Friday chicken soup into pork sausage), so a Hebrew letter
+// gets questions written by hand instead of generated ones.
+const HEBREW_QUESTIONS = [
+  'איזה ריח מחזיר אותך אליהם גם היום?',
+  'מה הם היו אומרים תמיד, משהו שאף אחד אחר לא אמר?',
+  'איפה היה המקום שלהם בבית, ומה הם עשו שם?',
+  'איזה צליל עדיין מזכיר לך אותם?',
+  'מה לא הספקת להגיד להם?',
+];
+const isHebrew = () => /[\u0590-\u05FF]/.test(letter.name + letter.items.map((i) => i.a).join(' '));
+
 function describe() {
   const who = letter.rel ? `${letter.name} (${letter.rel})` : letter.name;
   const lines = letter.items.map((it) => (it.q ? `- Asked "${it.q}", they said: ${it.a}` : `- ${it.a}`)).join('\n');
@@ -309,6 +321,10 @@ async function nextQuestion() {
   setAskBusy(true);
   qel.textContent = ''; qel.classList.add('thinking');
   let q = null;
+  if (isHebrew()) {
+    await new Promise((r) => setTimeout(r, 900));
+    q = HEBREW_QUESTIONS.find((h) => !letter.questions.includes(h)) || null;
+  }
   for (let tries = 0; tries < 2 && !q; tries++) {
     try {
       const raw = await ask(questionPrompt(), { max_new_tokens: 40, temperature: tries ? 0.9 : 0.7 });
