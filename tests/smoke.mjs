@@ -133,6 +133,29 @@ try {
   await phone.click('#ready-btn'); await phone.waitForSelector('#done-btn:not([disabled])'); await overflow('letter');
   await phone.click('#done-btn'); await overflow('dispatch');
   await phone.click('#burn-btn'); await phone.waitForSelector('[data-screen="after"]:not([hidden])', { timeout: 20000 }); await overflow('postmark');
+
+  // A browser without WebGPU: only the paper clerk (no model) is offered,
+  // its questions are the hand-written ones, and it never asks the worker.
+  const paper = await browser.newPage();
+  const paperReq = []; let paperWoke = false;
+  paper.on('request', (r) => { if (paperWoke) paperReq.push(r.url()); });
+  await paper.goto(origin + '/?mock&cpu');
+  await paper.waitForSelector('[data-screen="intro"]:not([hidden])');
+  check(await paper.isChecked('input[value="paper"]'), 'without WebGPU the paper clerk is chosen');
+  check(await paper.isDisabled('input[value="gemma3-1b"]'), 'without WebGPU Gemma is not offered');
+  await paper.click('#wake');
+  await paper.waitForSelector('[data-screen="who"]:not([hidden])', { timeout: 10000 });
+  paperWoke = true;
+  await paper.fill('#who-name', 'Saba'); await paper.fill('#who-memory', 'He whistled.');
+  await paper.click('#who-form button[type=submit]');
+  await paper.waitForSelector('#answer-btn:not([disabled])');
+  const pq = (await paper.textContent('#ghost-question')).trim();
+  check(pq === 'What is a sound that still brings them back to you?', `the paper clerk asks a hand-written question ("${pq}")`);
+  await paper.fill('#answer', 'The kettle.');
+  await paper.click('#ready-btn');
+  await paper.waitForSelector('#done-btn:not([disabled])');
+  check((await paper.inputValue('#letter')).includes('The kettle.'), 'the paper clerk sets down the letter');
+  check(paperReq.length === 0, `the paper clerk makes no requests (${paperReq.join(', ') || 'none'})`);
 } catch (e) {
   console.error('FAIL:', e);
   process.exitCode = 1;
