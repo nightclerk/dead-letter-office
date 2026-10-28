@@ -328,6 +328,14 @@ $('#ready-btn').addEventListener('click', () => {
   writeDraft();
 });
 
+// The letter sheet grows with the letter, so the whole page burns at once.
+function fitLetter() {
+  const ta = $('#letter');
+  ta.style.height = 'auto';
+  ta.style.height = Math.max(420, ta.scrollHeight + 8) + 'px';
+}
+$('#letter').addEventListener('input', fitLetter);
+
 async function writeDraft() {
   show('draft');
   const ta = $('#letter');
@@ -343,9 +351,11 @@ async function writeDraft() {
   ta.value = '';
   for (let i = 0; i < full.length && !reduce; i += 3) {
     ta.value = full.slice(0, i);
+    if (i % 60 === 0) fitLetter();
     await new Promise((r) => setTimeout(r, 12));
   }
   ta.value = full;
+  fitLetter();
   ta.readOnly = false;
   $('#draft-note').textContent = 'Every word here is yours. I only put them in order. Change anything, and add what only you can say.';
   $('#rewrite-btn').disabled = false; $('#done-btn').disabled = false;
@@ -432,6 +442,7 @@ function finish(how) {
   letter.name = ''; letter.rel = ''; letter.items = []; letter.questions = [];
   ['#who-name', '#who-rel', '#who-memory', '#answer'].forEach((sel) => ($(sel).value = ''));
   const mail = document.querySelector('.airmail'); mail.classList.remove('burning'); mail.style.setProperty('--burn', '-10%');
+  $('#letter').style.height = '';
   $('#letter').readOnly = false;
 
   const pm = document.querySelector('.postmark');
