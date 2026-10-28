@@ -5,7 +5,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const files = ['index.html', 'sw.js'];
+const files = ['index.html', 'eval.html', 'sw.js'];
 for (const dir of ['js', 'css']) for (const f of await readdir(dir)) files.push(join(dir, f));
 
 const URL_RE = /https?:\/\/[^\s"'`)<>]+/g;
