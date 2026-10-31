@@ -18,7 +18,7 @@ const MODELS = [
   {
     key: 'gemma4-e2b', id: 'onnx-community/gemma-4-E2B-it-ONNX',
     name: 'Gemma 4 · E2B', size: { f16: '≈ 3.1 GB', f32: '≈ 3.6 GB' }, dtype: { f16: 'q4f16', f32: 'q4' }, needs: 'webgpu',
-    blurb: 'The newest Gemma. Better with nuance and with languages other than English. A big download that needs a recent graphics card.',
+    blurb: 'The newest Gemma, for the curious. A big download, about four times slower, and on the test bench it repeated itself more often than the 1B.',
   },
   {
     // No model at all. In testing, Gemma 3 270M on the CPU loaded in over a
