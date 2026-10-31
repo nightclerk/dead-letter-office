@@ -59,3 +59,52 @@ Answers are sampled, so every run differs a little. All runs below were on the s
 | 15.2 | I was too shy to join her. I wish I had. | What did Maya's laughter sound like when she danced in the rain? | 9.7 |
 | 16.1 | He fixed everything in the house with duct tape. | What did Dad use to say when fixing things? | 7.8 |
 | 16.2 | Even my glasses once, before a school photo. | What sensation did he describe when working on his repairs? | 17.9 |
+
+## Gemma 4 E2B, 31 October 2026
+
+Same bench, same prompt as run 4 above, `q4` weights.
+
+| Usable | First question | Follow-up | Fell back | Median per question |
+|---|---|---|---|---|
+| 25 / 32 | 16 / 16 | 9 / 16 | 7 | 34.4 s |
+
+- Seven of sixteen follow-ups were the first question again, word for word, on both tries (the second try runs warmer, and still came back identical).
+- It asked about taste even though taste is no longer in the prompt ("What did the lake taste like when Grandpa Joe fished on it?").
+- Some text came out garbled, with names and spaces lost: "What did Aunt Miriam'spostcard smell like?", "What sound did Mr.ly use to read the poem?", "What did Grandma with love say?". This looks like a decoding problem in the browser build; we haven't tracked it down.
+
+For this job, on this laptop, the 1B is the better clerk, so it stays the default.
+
+| # | The clerk asked | Secs |
+|---|---|---|
+| 1.1 | What did the peel sound like when Grandpa Avi peeled the oranges? | 45.4 |
+| 1.2 | What did the kitchen table look like on top of the newspaper? | 51.6 |
+| 2.1 | What sound did Mom make while ironing the shirts? | 37.4 |
+| 2.2 | What song did Mom hum while ironing the shirts? | 29.4 |
+| 3.1 | What did Dad say when he drove you to swim practice? | 41.3 |
+| 3.2 | (fell back: repeated 3.1 twice) | 94.5 |
+| 4.1 | What did Aunt Miriam'spostcard smell like? | 27.0 |
+| 4.2 | What did Aunt Miriam'spostcard look like? | 29.5 |
+| 5.1 | What did you feel when you built the treehouse with Leo? | 32.7 |
+| 5.2 | What did the treehouse sound like when it leaked? | 29.6 |
+| 6.1 | What did the jar of candies taste like? | 25.4 |
+| 6.2 | What did Grandma with love say? | 26.8 |
+| 7.1 | What sound did Mr.ly use to read the poem? | 29.2 |
+| 7.2 | What did Mr.use to say at the end of the class? | 68.1 |
+| 8.1 | What did Nana grow on the balcony? | 23.6 |
+| 8.2 | What did Nana say to the tomatoes every morning? | 34.4 |
+| 9.1 | What did Uncle Dov's voice sound like when he told jokes? | 49.0 |
+| 9.2 | (fell back: repeated 9.1 twice) | 92.8 |
+| 10.1 | What did Sara use to cut your hair? | 27.5 |
+| 10.2 | (fell back: repeated 10.1, then a near-repeat) | 59.9 |
+| 11.1 | What did the lake taste like when Grandpa Joe fished on it? | 31.7 |
+| 11.2 | (fell back: repeated 11.1 twice) | 78.9 |
+| 12.1 | What did Mom write on the notes? | 22.1 |
+| 12.2 | What did Mom draw on the notes? | 23.4 |
+| 13.1 | What sound did their grandmother make while she sang in the kitchen? | 35.8 |
+| 13.2 | (fell back: repeated 13.1 twice) | 64.9 |
+| 14.1 | What did the pancakes taste like? | 20.4 |
+| 14.2 | (fell back: repeated 14.1 twice) | 48.1 |
+| 15.1 | What did the rain sound like when Maya danced? | 25.8 |
+| 15.2 | (fell back: repeated 15.1 twice) | 75.5 |
+| 16.1 | What did Dad use to fix things? | 26.4 |
+| 16.2 | What was the texture of the duct tape Dad used? | 75.8 |
